@@ -1,4 +1,0 @@
-install 
-rich 
-python-dotenv 
-web3
