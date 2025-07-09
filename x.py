@@ -11,7 +11,6 @@ from rich.table import Table
 from rich import box
 from rich.style import Style
 from rich.text import Text
-from rich.columns import Columns
 
 # Inisialisasi rich console
 console = Console()
