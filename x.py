@@ -11,6 +11,8 @@ from rich.table import Table
 from rich import box
 from rich.style import Style
 from rich.text import Text
+from rich.columns import Columns
+from rich.markdown import Markdown
 
 # Inisialisasi rich console
 console = Console()
@@ -30,16 +32,22 @@ THEME = {
 
 # Banner aplikasi
 def show_banner():
-    console.print(Panel(
-        Text("Injective Automation BOT", justify="center", style=THEME["accent"]),
-        Text("Allowindo VIP Edition", justify="center", style=THEME["secondary"]),
-        box=box.ROUNDED,
+    content = Text.assemble(
+        ("Injective Automation BOT\n", THEME["accent"]),
+        ("Allowindo VIP Edition", THEME["secondary"]),
+        justify="center"
+    )
+    
+    panel = Panel(
+        content,
+        title="[bold]🚀 CRYPTO SWAP BOT[/bold]",
+        subtitle=Text(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", style=THEME["info"]),
         style=THEME["primary"],
         width=80,
         padding=(1, 2),
-        title="[bold]🚀 CRYPTO SWAP BOT[/bold]",
-        subtitle=Text(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", style=THEME["info"])
-    ))
+        box=box.ROUNDED
+    )
+    console.print(panel)
 
 # Logger dengan format yang benar
 class Logger:
@@ -366,13 +374,6 @@ def get_token_balance(w3, wallet, token_address, token_name):
     return balance
 
 def main_menu():
-    console.print(Panel(
-        "PILIH ARAH SWAP",
-        box=box.ROUNDED,
-        style=THEME["secondary"],
-        width=40
-    ))
-    
     options = [
         ("1", "Swap wINJ ke PMX"),
         ("2", "Swap PMX ke wINJ")
@@ -388,7 +389,14 @@ def main_menu():
             text
         )
     
-    console.print(grid, justify="center")
+    menu_panel = Panel(
+        grid,
+        title="PILIH ARAH SWAP",
+        border_style=THEME["secondary"],
+        box=box.ROUNDED,
+        width=40
+    )
+    console.print(menu_panel)
     
     choice = console.input(Text("» ", style=THEME["primary"]) + "Masukkan pilihan [1-2]: ")
     return choice
@@ -404,11 +412,14 @@ def main():
         private_keys = load_private_keys()
         
         # Tampilkan daftar wallet
-        console.print(Panel(
-            create_wallet_table(w3, private_keys),
+        wallet_table = create_wallet_table(w3, private_keys)
+        wallet_panel = Panel(
+            wallet_table,
             title="[bold]WALLET TERDETEKSI[/bold]",
-            border_style=THEME["primary"]
-        ))
+            border_style=THEME["primary"],
+            box=box.ROUNDED
+        )
+        console.print(wallet_panel)
         
         # Pilih arah swap
         choice = main_menu()
@@ -446,17 +457,21 @@ def main():
             return
         
         # Ringkasan eksekusi
-        console.print(Panel(
-            Text.from_markup(
-                f"[bold]RINCIAN EKSEKUSI[/bold]\n\n"
-                f"• Arah swap: [bold]{token_in_name} → {'PMX' if token_out == PMX_ADDRESS else 'wINJ'}[/bold]\n"
-                f"• Jumlah per swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f} {token_in_name}[/bold]\n"
-                f"• Swap per wallet: [bold]{tx_count}[/bold]\n"
-                f"• Total wallet: [bold]{len(private_keys)}[/bold]"
-            ),
+        summary_content = Text.from_markup(
+            f"[bold]RINCIAN EKSEKUSI[/bold]\n\n"
+            f"• Arah swap: [bold]{token_in_name} → {'PMX' if token_out == PMX_ADDRESS else 'wINJ'}[/bold]\n"
+            f"• Jumlah per swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f} {token_in_name}[/bold]\n"
+            f"• Swap per wallet: [bold]{tx_count}[/bold]\n"
+            f"• Total wallet: [bold]{len(private_keys)}[/bold]"
+        )
+        
+        summary_panel = Panel(
+            summary_content,
             title="[bold]KONFIRMASI[/bold]",
-            border_style=THEME["accent"]
-        ))
+            border_style=THEME["accent"],
+            box=box.ROUNDED
+        )
+        console.print(summary_panel)
         
         confirm = console.input(Text("» ", style=THEME["primary"]) + "Lanjutkan? (y/N): ")
         if confirm.lower() != 'y':
@@ -476,14 +491,18 @@ def main():
                     Logger.error(f"Wallet tidak valid: {pk[:6]}...")
                     continue
                 
-                console.print(Panel(
-                    Text.from_markup(
-                        f"[bold]{wallet.address}[/bold]\n"
-                        f"Wallet [bold]{idx}[/bold] dari [bold]{len(private_keys)}[/bold]"
-                    ),
+                wallet_header = Text.from_markup(
+                    f"[bold]{wallet.address}[/bold]\n"
+                    f"Wallet [bold]{idx}[/bold] dari [bold]{len(private_keys)}[/bold]"
+                )
+                
+                wallet_panel = Panel(
+                    wallet_header,
                     title=f"🚀 PROSES WALLET {idx}",
-                    border_style=THEME["info"]
-                ))
+                    border_style=THEME["info"],
+                    box=box.ROUNDED
+                )
+                console.print(wallet_panel)
                 
                 # Cek balance
                 balance = get_token_balance(w3, wallet, token_in, token_in_name)
@@ -520,14 +539,13 @@ def main():
         
         border_style = THEME["success"] if successful_swaps == total_swaps else THEME["warning"]
         
-        console.print(
-            Panel(
-                panel_content,
-                title="[bold]📊 HASIL AKHIR[/bold]",
-                border_style=border_style,
-                padding=(1, 4)
-            )
-        )
+        result_panel = Panel(
+            panel_content,
+            title="[bold]📊 HASIL AKHIR[/bold]",
+            border_style=border_style,
+            box=box.ROUNDED,
+            padding=(1, 4)
+        console.print(result_panel)
     except KeyboardInterrupt:
         Logger.warn("Program dihentikan oleh pengguna")
         exit(0)
