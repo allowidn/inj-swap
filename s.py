@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+import os
+import time
+from datetime import datetime
+from web3 import Web3
+from dotenv import load_dotenv
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from rich.table import Table
+from rich import box
+from rich.style import Style
+from rich.text import Text
+
+# Inisialisasi rich console
+console = Console()
+
+# Tema warna yang valid dengan format Rich
+THEME = {
+    "primary": "bold cyan",
+    "secondary": "blue",
+    "success": "bold green",
+    "warning": "bold yellow",
+    "error": "bold red",
+    "info": "cyan",
+    "accent": "magenta",
+    "dark": "black",
+    "light": "white"
+}
+
+# Banner aplikasi
+def show_banner():
+    console.print(Panel(
+        Text("Injective Automation BOT", justify="center", style=THEME["accent"]),
+        Text("Allowindo VIP Edition", justify="center", style=THEME["secondary"]),
+        box=box.ROUNDED,
+        style=Style(color=THEME["primary"]),
+        width=80,
+        padding=(1, 2),
+        title="[bold]🚀 CRYPTO SWAP BOT[/bold]",
+        subtitle=f"[{THEME['info']}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    ))
+
+# Logger dengan format warna yang benar
+class Logger:
+    @staticmethod
+    def info(msg):
+        console.print(f"[{THEME['primary']}]•[/] {msg}")
+    
+    @staticmethod
+    def warn(msg):
+        console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] {msg}")
+    
+    @staticmethod
+    def error(msg):
+        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] {msg}")
+    
+    @staticmethod
+    def success(msg):
+        console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] {msg}")
+    
+    @staticmethod
+    def loading(msg):
+        console.print(f"[{THEME['info']}][⟳][/] {msg}")
+    
+    @staticmethod
+    def step(msg):
+        console.print(f"[{THEME['accent']}][→][/] [bold]{msg}[/bold]")
+    
+    @staticmethod
+    def transaction_status(hash, status, tx_num=None):
+        if status == "pending":
+            style = THEME["warning"]
+            icon = "⏳"
+        elif status == "success":
+            style = THEME["success"]
+            icon = "✅"
+        else:
+            style = THEME["error"]
+            icon = "❌"
+        
+        tx_text = f" [dim](TX {tx_num})[/dim]" if tx_num else ""
+        console.print(
+            f"[{style}]{icon} [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{hash}]{hash[:12]}...[/link]{tx_text}"
+        )
+
+# Konfigurasi jaringan
+RPC_URL = 'https://k8s.testnet.json-rpc.injective.network'
+ROUTER_ADDRESS = '0x4069f8Ada1a4d3B705e6a82F9A3EB8624Cd4Cb1E'
+WINJ_ADDRESS = '0xe1c64DDE0A990ac2435B05DCdac869a17fE06Bd2'
+PMX_ADDRESS = '0xeD0094eE59492cB08A5602Eb8275acb00FFb627d'
+PAIR_ADDRESS = '0x54Ba382CED996738c2A0793247F66dE86C441987'
+
+# ABI kontrak (sama seperti sebelumnya)
+# ... [ABI tetap sama] ...
+
+# Inisialisasi Web3
+def init_web3():
+    console.print(f"[{THEME['info']}][⟳][/] Menghubungkan ke jaringan Injective...")
+    w3 = Web3(Web3.HTTPProvider(RPC_URL))
+    if not w3.is_connected():
+        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Gagal terhubung ke RPC Injective")
+        exit(1)
+    console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Terhubung ke Injective Testnet (Chain ID: {w3.eth.chain_id})")
+    return w3
+
+# Load environment variables
+def load_private_keys():
+    load_dotenv()
+    private_keys = [v for k, v in os.environ.items() if k.startswith('PRIVATE_KEY_')]
+
+    if not private_keys:
+        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Tidak ada private key yang ditemukan di file .env")
+        exit(1)
+    
+    console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Loaded {len(private_keys)} wallet")
+    return private_keys
+
+def create_wallet_table(w3, wallets):
+    table = Table(show_header=True, header_style=f"bold {THEME['primary']}", box=box.ROUNDED)
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Address", min_width=20)
+    table.add_column("Balance", justify="right")
+    
+    for i, pk in enumerate(wallets, 1):
+        wallet = w3.eth.account.from_key(pk)
+        balance = w3.eth.get_balance(wallet.address)
+        table.add_row(
+            str(i),
+            wallet.address,
+            f"{w3.from_wei(balance, 'ether'):.6f} INJ"
+        )
+    
+    return table
+
+def approve_token(w3, wallet, token_address, spender, amount):
+    token_contract = w3.eth.contract(address=token_address, abi=ERC20_ABI)
+    allowance = token_contract.functions.allowance(wallet.address, spender).call()
+    
+    if allowance < amount:
+        console.print(f"[{THEME['accent']}][→][/] [bold]Meng-approve {w3.from_wei(amount, 'ether'):.6f} token[/bold]")
+        tx = token_contract.functions.approve(spender, amount).build_transaction({
+            'from': wallet.address,
+            'nonce': w3.eth.get_transaction_count(wallet.address),
+            'gas': 200000,
+            'gasPrice': w3.eth.gas_price
+        })
+        
+        signed_tx = wallet.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None),
+            TimeRemainingColumn(),
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"[{THEME['info']}]Menunggu konfirmasi...", total=1)
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            progress.update(task, advance=1)
+        
+        if receipt.status == 1:
+            console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Approval berhasil")
+        else:
+            raise Exception("Transaksi approval gagal")
+    else:
+        console.print(f"[{THEME['primary']}]•[/] Allowance sudah cukup")
+
+def get_expected_output(w3, amount_in, token_in, token_out):
+    router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
+    routes = [(
+        token_in,
+        token_out,
+        False
+    )]
+    amounts_out = router_contract.functions.getAmountsOut(amount_in, routes).call()
+    return amounts_out[1]
+
+def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
+    router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
+    pair_contract = w3.eth.contract(address=PAIR_ADDRESS, abi=PAIR_ABI)
+    deadline = int(time.time()) + 1200  # 20 menit
+    
+    routes = [(
+        token_in,
+        token_out,
+        False
+    )]
+    
+    amount_out_min = get_expected_output(w3, amount_in, token_in, token_out)
+    slippage_adjusted = int(amount_out_min * 0.95)
+    
+    token_in_name = "wINJ" if token_in == WINJ_ADDRESS else "PMX"
+    token_out_name = "PMX" if token_out == PMX_ADDRESS else "wINJ"
+    
+    console.print(f"[{THEME['primary']}]•[/] Output diharapkan: [bold]{w3.from_wei(amount_out_min, 'ether'):.6f}[/bold] {token_out_name}")
+    console.print(f"[{THEME['primary']}]•[/] Dengan slippage: [bold]{w3.from_wei(slippage_adjusted, 'ether'):.6f}[/bold] {token_out_name}")
+    
+    # Approve token jika diperlukan
+    approve_token(w3, wallet, token_in, ROUTER_ADDRESS, amount_in)
+    
+    console.print(f"[{THEME['accent']}][→][/] [bold]Memulai swap: {w3.from_wei(amount_in, 'ether'):.6f} {token_in_name} → {token_out_name}[/bold]")
+    
+    try:
+        # Bangun transaksi swap
+        tx = router_contract.functions.swapExactTokensForTokens(
+            amount_in,
+            slippage_adjusted,
+            routes,
+            wallet.address,
+            deadline
+        ).build_transaction({
+            'from': wallet.address,
+            'nonce': w3.eth.get_transaction_count(wallet.address),
+            'gas': 600000,
+            'gasPrice': w3.eth.gas_price
+        })
+        
+        # Tandatangani dan kirim transaksi
+        signed_tx = wallet.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        
+        # Gunakan fungsi transaction_status yang sudah diperbaiki
+        if tx_num:
+            console.print(f"[{THEME['warning']}]⏳ [bold]Transaction (TX {tx_num}):[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        else:
+            console.print(f"[{THEME['warning']}]⏳ [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None),
+            TimeRemainingColumn(),
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"[{THEME['info']}]Mengkonfirmasi transaksi...", total=1)
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            progress.update(task, advance=1)
+        
+        if receipt.status != 1:
+            raise Exception("Transaksi gagal")
+        
+        if tx_num:
+            console.print(f"[{THEME['success']}]✅ [bold]Transaction (TX {tx_num}):[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        else:
+            console.print(f"[{THEME['success']}]✅ [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        
+        # Proses event logs
+        for log in receipt['logs']:
+            if log['address'].lower() == PAIR_ADDRESS.lower():
+                try:
+                    event = pair_contract.events.Swap().process_log(log)
+                    amount0_out = w3.from_wei(event.args['amount0Out'], 'ether')
+                    amount1_out = w3.from_wei(event.args['amount1Out'], 'ether')
+                    console.print(f"[{THEME['primary']}]•[/] Swap berhasil: [bold]{amount0_out:.6f}[/bold] wINJ ⇄ [bold]{amount1_out:.6f}[/bold] PMX")
+                except:
+                    continue
+        return True
+    except Exception as e:
+        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Swap gagal: {str(e)}")
+        return False
+
+def get_token_balance(w3, wallet, token_address, token_name):
+    token_contract = w3.eth.contract(address=token_address, abi=ERC20_ABI)
+    balance = token_contract.functions.balanceOf(wallet.address).call()
+    console.print(f"[{THEME['primary']}]•[/] Balance {token_name}: [bold]{w3.from_wei(balance, 'ether'):.6f}[/bold]")
+    return balance
+
+def main_menu():
+    console.print(Panel(
+        "PILIH ARAH SWAP",
+        box=box.ROUNDED,
+        style=Style(color=THEME["secondary"]),
+        width=40
+    ))
+    
+    options = [
+        ("1", "Swap wINJ ke PMX"),
+        ("2", "Swap PMX ke wINJ")
+    ]
+    
+    grid = Table.grid(expand=True)
+    grid.add_column(width=4)
+    grid.add_column()
+    
+    for num, text in options:
+        grid.add_row(
+            f"[{THEME['accent']}][bold]{num}[/bold][/]",
+            text
+        )
+    
+    console.print(grid, justify="center")
+    
+    choice = console.input(f"[{THEME['primary']}]»[/] Masukkan pilihan [1-2]: ")
+    return choice
+
+def main():
+    try:
+        show_banner()
+        
+        # Inisialisasi Web3
+        w3 = init_web3()
+        
+        # Load private keys
+        private_keys = load_private_keys()
+        
+        # Tampilkan daftar wallet
+        console.print(Panel(
+            create_wallet_table(w3, private_keys),
+            title="[bold]WALLET TERDETEKSI[/bold]",
+            border_style=Style(color=THEME["primary"])
+        ))
+        
+        # Pilih arah swap
+        choice = main_menu()
+        
+        if choice == '1':
+            token_in = WINJ_ADDRESS
+            token_out = PMX_ADDRESS
+            token_in_name = "wINJ"
+        elif choice == '2':
+            token_in = PMX_ADDRESS
+            token_out = WINJ_ADDRESS
+            token_in_name = "PMX"
+        else:
+            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Pilihan tidak valid")
+            return
+        
+        # Input jumlah token
+        amount_str = console.input(
+            f"[{THEME['primary']}]»[/] Masukkan jumlah {token_in_name} per swap: ")
+        try:
+            amount_in = w3.to_wei(float(amount_str), 'ether')
+        except ValueError:
+            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Jumlah tidak valid")
+            return
+        
+        # Input jumlah transaksi
+        tx_count_str = console.input(
+            f"[{THEME['primary']}]»[/] Jumlah swap per wallet: ")
+        try:
+            tx_count = int(tx_count_str)
+            if tx_count <= 0:
+                raise ValueError
+        except ValueError:
+            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Jumlah tidak valid")
+            return
+        
+        # Ringkasan eksekusi
+        console.print(Panel(
+            f"[bold]RINCIAN EKSEKUSI[/bold]\n\n"
+            f"• Arah swap: [bold]{token_in_name} → {'PMX' if token_out == PMX_ADDRESS else 'wINJ'}[/bold]\n"
+            f"• Jumlah per swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f} {token_in_name}[/bold]\n"
+            f"• Swap per wallet: [bold]{tx_count}[/bold]\n"
+            f"• Total wallet: [bold]{len(private_keys)}[/bold]",
+            title="[bold]KONFIRMASI[/bold]",
+            border_style=Style(color=THEME["accent"])
+        ))
+        
+        confirm = console.input(f"[{THEME['primary']}]»[/] Lanjutkan? (y/N): ")
+        if confirm.lower() != 'y':
+            console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] Eksekusi dibatalkan")
+            return
+        
+        # Statistik keseluruhan
+        total_swaps = len(private_keys) * tx_count
+        successful_swaps = 0
+        start_time = time.time()
+        
+        # Proses untuk setiap private key
+        for idx, pk in enumerate(private_keys, 1):
+            try:
+                wallet = w3.eth.account.from_key(pk)
+                if not wallet.address:
+                    console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Wallet tidak valid: {pk[:6]}...")
+                    continue
+                
+                console.print(Panel(
+                    f"[bold]{wallet.address}[/bold]\n"
+                    f"Wallet [bold]{idx}[/bold] dari [bold]{len(private_keys)}[/bold]",
+                    title=f"🚀 PROSES WALLET {idx}",
+                    border_style=Style(color=THEME["info"])
+                ))
+                
+                # Cek balance
+                balance = get_token_balance(w3, wallet, token_in, token_in_name)
+                total_required = amount_in * tx_count
+                
+                if balance < total_required:
+                    console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Saldo tidak mencukupi! Diperlukan: {w3.from_wei(total_required, 'ether'):.6f} {token_in_name}")
+                    continue
+                
+                # Eksekusi swap
+                for tx_num in range(1, tx_count + 1):
+                    console.rule(f"Swap [bold]{tx_num}[/bold] dari [bold]{tx_count}[/bold]", style=Style(color=THEME["secondary"]))
+                    success = swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num)
+                    if success:
+                        successful_swaps += 1
+                    
+                    # Jeda antar transaksi
+                    if tx_num < tx_count:
+                        time.sleep(3)
+            
+            except Exception as e:
+                console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Error pada wallet: {str(e)}")
+        
+        # Ringkasan akhir
+        elapsed_time = time.time() - start_time
+        panel_content = (
+            f"[bold]• TOTAL SWAP:[/bold] {total_swaps}\n"
+            f"[bold]• BERHASIL:[/bold] {successful_swaps}\n"
+            f"[bold]• GAGAL:[/bold] {total_swaps - successful_swaps}\n"
+            f"[bold]• WAKTU:[/bold] {elapsed_time:.2f} detik\n"
+            f"[bold]• RATA-RATA:[/bold] {elapsed_time/total_swaps if total_swaps > 0 else 0:.2f} detik/swap"
+        )
+        
+        border_style = THEME["success"] if successful_swaps == total_swaps else THEME["warning"]
+        
+        console.print(
+            Panel(
+                panel_content,
+                title="[bold]📊 HASIL AKHIR[/bold]",
+                border_style=Style(color=border_style),
+                padding=(1, 4)
+            )
+        )
+    except KeyboardInterrupt:
+        console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] Program dihentikan oleh pengguna")
+        exit(0)
+    except Exception as e:
+        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Error fatal: {str(e)}")
+        exit(1)
+
+if __name__ == "__main__":
+    main()
