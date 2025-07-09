@@ -11,7 +11,6 @@ from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from rich import box
 from rich.style import Style
-from rich.live import Live
 from rich.text import Text
 
 # Inisialisasi rich console
@@ -203,7 +202,7 @@ def load_private_keys():
     Logger.success(f"Loaded {len(private_keys)} wallet")
     return private_keys
 
-def create_wallet_table(wallets):
+def create_wallet_table(w3, wallets):
     table = Table(show_header=True, header_style=f"bold {THEME['primary']}", box=box.ROUNDED)
     table.add_column("#", style="dim", width=4)
     table.add_column("Address", min_width=20)
@@ -220,7 +219,7 @@ def create_wallet_table(wallets):
     
     return table
 
-def approve_token(wallet, token_address, spender, amount):
+def approve_token(w3, wallet, token_address, spender, amount):
     token_contract = w3.eth.contract(address=token_address, abi=ERC20_ABI)
     allowance = token_contract.functions.allowance(wallet.address, spender).call()
     
@@ -253,7 +252,7 @@ def approve_token(wallet, token_address, spender, amount):
     else:
         Logger.info(f"Allowance sudah cukup")
 
-def get_expected_output(amount_in, token_in, token_out):
+def get_expected_output(w3, amount_in, token_in, token_out):
     router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
     routes = [(
         token_in,
@@ -263,7 +262,7 @@ def get_expected_output(amount_in, token_in, token_out):
     amounts_out = router_contract.functions.getAmountsOut(amount_in, routes).call()
     return amounts_out[1]
 
-def swap_tokens(wallet, amount_in, token_in, token_out, tx_num):
+def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
     router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
     pair_contract = w3.eth.contract(address=PAIR_ADDRESS, abi=PAIR_ABI)
     deadline = int(time.time()) + 1200  # 20 menit
@@ -274,7 +273,7 @@ def swap_tokens(wallet, amount_in, token_in, token_out, tx_num):
         False
     )]
     
-    amount_out_min = get_expected_output(amount_in, token_in, token_out)
+    amount_out_min = get_expected_output(w3, amount_in, token_in, token_out)
     slippage_adjusted = int(amount_out_min * 0.95)
     
     token_in_name = "wINJ" if token_in == WINJ_ADDRESS else "PMX"
@@ -284,7 +283,7 @@ def swap_tokens(wallet, amount_in, token_in, token_out, tx_num):
     Logger.info(f"Dengan slippage: [bold]{w3.from_wei(slippage_adjusted, 'ether'):.6f}[/bold] {token_out_name}")
     
     # Approve token jika diperlukan
-    approve_token(wallet, token_in, ROUTER_ADDRESS, amount_in)
+    approve_token(w3, wallet, token_in, ROUTER_ADDRESS, amount_in)
     
     Logger.step(f"Memulai swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f}[/bold] {token_in_name} → {token_out_name}")
     
@@ -335,11 +334,10 @@ def swap_tokens(wallet, amount_in, token_in, token_out, tx_num):
                     continue
         return True
     except Exception as e:
-        Logger.transaction_status(tx_hash.hex(), "error", tx_num)
         Logger.error(f"Swap gagal: {str(e)}")
         return False
 
-def get_token_balance(wallet, token_address, token_name):
+def get_token_balance(w3, wallet, token_address, token_name):
     token_contract = w3.eth.contract(address=token_address, abi=ERC20_ABI)
     balance = token_contract.functions.balanceOf(wallet.address).call()
     Logger.info(f"Balance {token_name}: [bold]{w3.from_wei(balance, 'ether'):.6f}[/bold]")
@@ -377,7 +375,6 @@ def main():
     show_banner()
     
     # Inisialisasi Web3
-    global w3
     w3 = init_web3()
     
     # Load private keys
@@ -385,7 +382,7 @@ def main():
     
     # Tampilkan daftar wallet
     console.print(Panel(
-        create_wallet_table(private_keys),
+        create_wallet_table(w3, private_keys),
         title="[bold]WALLET TERDETEKSI[/bold]",
         border_style=THEME["primary"]
     ))
@@ -462,7 +459,7 @@ def main():
             ))
             
             # Cek balance
-            balance = get_token_balance(wallet, token_in, token_in_name)
+            balance = get_token_balance(w3, wallet, token_in, token_in_name)
             total_required = amount_in * tx_count
             
             if balance < total_required:
@@ -472,7 +469,7 @@ def main():
             # Eksekusi swap
             for tx_num in range(1, tx_count + 1):
                 console.rule(f"Swap [bold]{tx_num}[/bold] dari [bold]{tx_count}[/bold]", style=THEME["secondary"])
-                success = swap_tokens(wallet, amount_in, token_in, token_out, tx_num)
+                success = swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num)
                 if success:
                     successful_swaps += 1
                 
@@ -485,15 +482,26 @@ def main():
     
     # Ringkasan akhir
     elapsed_time = time.time() - start_time
-    console.print(Panel(
+    panel_content = (
         f"[bold]• TOTAL SWAP:[/bold] {total_swaps}\n"
         f"[bold]• BERHASIL:[/bold] [success]{successful_swaps}[/success]\n"
         f"[bold]• GAGAL:[/bold] [error]{total_swaps - successful_swaps}[/error]\n"
         f"[bold]• WAKTU:[/bold] {elapsed_time:.2f} detik\n"
-        f"[bold]• RATA-RATA:[/bold] {elapsed_time/total_swaps if total_swaps > 0 else 0:.2f} detik/swap",
-        title="[bold]📊 HASIL AKHIR[/bold]",
-        border_style=THEME["success"] if successful_swaps == total_swaps else THEME["warning"],
-        padding=(1, 4)
+        f"[bold]• RATA-RATA:[/bold] {elapsed_time/total_swaps if total_swaps > 0 else 0:.2f} detik/swap"
+    )
+    
+    if successful_swaps == total_swaps:
+        border_color = THEME["success"]
+    else:
+        border_color = THEME["warning"]
+    
+    console.print(
+        Panel(
+            panel_content,
+            title="[bold]📊 HASIL AKHIR[/bold]",
+            border_style=border_color,
+            padding=(1, 4)
+        )
     )
 
 if __name__ == "__main__":
