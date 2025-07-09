@@ -45,7 +45,7 @@ def show_banner():
 class Logger:
     @staticmethod
     def info(msg):
-        console.print(f"[{THEME['primary']}]•[/] {msg}")
+        console.print(f"[{THEME['info']}]•[/] {msg}")
     
     @staticmethod
     def warn(msg):
@@ -91,7 +91,7 @@ WINJ_ADDRESS = '0xe1c64DDE0A990ac2435B05DCdac869a17fE06Bd2'
 PMX_ADDRESS = '0xeD0094eE59492cB08A5602Eb8275acb00FFb627d'
 PAIR_ADDRESS = '0x54Ba382CED996738c2A0793247F66dE86C441987'
 
-# ABI kontrak (sama seperti sebelumnya)
+# ABI kontrak
 ROUTER_ABI = [
     {
         "name": "swapExactTokensForTokens",
@@ -177,14 +177,15 @@ PAIR_ABI = [
         "type": "event"
     }
 ]
+
 # Inisialisasi Web3
 def init_web3():
-    console.print(f"[{THEME['info']}][⟳][/] Menghubungkan ke jaringan Injective...")
+    Logger.info("Menghubungkan ke jaringan Injective...")
     w3 = Web3(Web3.HTTPProvider(RPC_URL))
     if not w3.is_connected():
-        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Gagal terhubung ke RPC Injective")
+        Logger.error("Gagal terhubung ke RPC Injective")
         exit(1)
-    console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Terhubung ke Injective Testnet (Chain ID: {w3.eth.chain_id})")
+    Logger.success(f"Terhubung ke Injective Testnet (Chain ID: {w3.eth.chain_id})")
     return w3
 
 # Load environment variables
@@ -193,10 +194,10 @@ def load_private_keys():
     private_keys = [v for k, v in os.environ.items() if k.startswith('PRIVATE_KEY_')]
 
     if not private_keys:
-        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Tidak ada private key yang ditemukan di file .env")
+        Logger.error("Tidak ada private key yang ditemukan di file .env")
         exit(1)
     
-    console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Loaded {len(private_keys)} wallet")
+    Logger.success(f"Loaded {len(private_keys)} wallet")
     return private_keys
 
 def create_wallet_table(w3, wallets):
@@ -221,16 +222,20 @@ def approve_token(w3, wallet, token_address, spender, amount):
     allowance = token_contract.functions.allowance(wallet.address, spender).call()
     
     if allowance < amount:
-        console.print(f"[{THEME['accent']}][→][/] [bold]Meng-approve {w3.from_wei(amount, 'ether'):.6f} token[/bold]")
+        Logger.step(f"Meng-approve {w3.from_wei(amount, 'ether'):.6f} token")
         tx = token_contract.functions.approve(spender, amount).build_transaction({
             'from': wallet.address,
             'nonce': w3.eth.get_transaction_count(wallet.address),
             'gas': 200000,
-            'gasPrice': w3.eth.gas_price
+            'gasPrice': w3.eth.gas_price,
+            'chainId': w3.eth.chain_id
         })
         
         signed_tx = wallet.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash_hex = tx_hash.hex()
+        
+        Logger.transaction_status(tx_hash_hex, "pending")
         
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -243,21 +248,28 @@ def approve_token(w3, wallet, token_address, spender, amount):
             progress.update(task, advance=1)
         
         if receipt.status == 1:
-            console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] Approval berhasil")
+            Logger.success("Approval berhasil")
+            Logger.transaction_status(tx_hash_hex, "success")
         else:
+            Logger.error("Transaksi approval gagal")
+            Logger.transaction_status(tx_hash_hex, "failed")
             raise Exception("Transaksi approval gagal")
     else:
-        console.print(f"[{THEME['primary']}]•[/] Allowance sudah cukup")
+        Logger.info(f"Allowance sudah cukup: {w3.from_wei(allowance, 'ether'):.6f}")
 
 def get_expected_output(w3, amount_in, token_in, token_out):
-    router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
-    routes = [(
-        token_in,
-        token_out,
-        False
-    )]
-    amounts_out = router_contract.functions.getAmountsOut(amount_in, routes).call()
-    return amounts_out[1]
+    try:
+        router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
+        routes = [(
+            token_in,
+            token_out,
+            False
+        )]
+        amounts_out = router_contract.functions.getAmountsOut(amount_in, routes).call()
+        return amounts_out[-1]  # Output adalah elemen terakhir array
+    except Exception as e:
+        Logger.error(f"Gagal mendapatkan output: {str(e)}")
+        return 0
 
 def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
     router_contract = w3.eth.contract(address=ROUTER_ADDRESS, abi=ROUTER_ABI)
@@ -271,18 +283,22 @@ def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
     )]
     
     amount_out_min = get_expected_output(w3, amount_in, token_in, token_out)
-    slippage_adjusted = int(amount_out_min * 0.95)
+    if amount_out_min <= 0:
+        Logger.error("Tidak dapat melanjutkan swap: amount out min = 0")
+        return False
+    
+    slippage_adjusted = int(amount_out_min * 0.95)  # 5% slippage
     
     token_in_name = "wINJ" if token_in == WINJ_ADDRESS else "PMX"
     token_out_name = "PMX" if token_out == PMX_ADDRESS else "wINJ"
     
-    console.print(f"[{THEME['primary']}]•[/] Output diharapkan: [bold]{w3.from_wei(amount_out_min, 'ether'):.6f}[/bold] {token_out_name}")
-    console.print(f"[{THEME['primary']}]•[/] Dengan slippage: [bold]{w3.from_wei(slippage_adjusted, 'ether'):.6f}[/bold] {token_out_name}")
+    Logger.info(f"Output diharapkan: {w3.from_wei(amount_out_min, 'ether'):.6f} {token_out_name}")
+    Logger.info(f"Dengan slippage: {w3.from_wei(slippage_adjusted, 'ether'):.6f} {token_out_name}")
     
     # Approve token jika diperlukan
     approve_token(w3, wallet, token_in, ROUTER_ADDRESS, amount_in)
     
-    console.print(f"[{THEME['accent']}][→][/] [bold]Memulai swap: {w3.from_wei(amount_in, 'ether'):.6f} {token_in_name} → {token_out_name}[/bold]")
+    Logger.step(f"Memulai swap: {w3.from_wei(amount_in, 'ether'):.6f} {token_in_name} → {token_out_name}")
     
     try:
         # Bangun transaksi swap
@@ -296,18 +312,16 @@ def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
             'from': wallet.address,
             'nonce': w3.eth.get_transaction_count(wallet.address),
             'gas': 600000,
-            'gasPrice': w3.eth.gas_price
+            'gasPrice': w3.eth.gas_price,
+            'chainId': w3.eth.chain_id
         })
         
         # Tandatangani dan kirim transaksi
         signed_tx = wallet.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash_hex = tx_hash.hex()
         
-        # Gunakan fungsi transaction_status yang sudah diperbaiki
-        if tx_num:
-            console.print(f"[{THEME['warning']}]⏳ [bold]Transaction (TX {tx_num}):[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
-        else:
-            console.print(f"[{THEME['warning']}]⏳ [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        Logger.transaction_status(tx_hash_hex, "pending", tx_num)
         
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -320,32 +334,32 @@ def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
             progress.update(task, advance=1)
         
         if receipt.status != 1:
-            raise Exception("Transaksi gagal")
+            Logger.error("Transaksi gagal")
+            Logger.transaction_status(tx_hash_hex, "failed", tx_num)
+            return False
         
-        if tx_num:
-            console.print(f"[{THEME['success']}]✅ [bold]Transaction (TX {tx_num}):[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
-        else:
-            console.print(f"[{THEME['success']}]✅ [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{tx_hash.hex()}]{tx_hash.hex()[:12]}...[/link]")
+        Logger.success("Swap berhasil")
+        Logger.transaction_status(tx_hash_hex, "success", tx_num)
         
         # Proses event logs
         for log in receipt['logs']:
             if log['address'].lower() == PAIR_ADDRESS.lower():
                 try:
                     event = pair_contract.events.Swap().process_log(log)
-                    amount0_out = w3.from_wei(event.args['amount0Out'], 'ether')
-                    amount1_out = w3.from_wei(event.args['amount1Out'], 'ether')
-                    console.print(f"[{THEME['primary']}]•[/] Swap berhasil: [bold]{amount0_out:.6f}[/bold] wINJ ⇄ [bold]{amount1_out:.6f}[/bold] PMX")
-                except:
-                    continue
+                    amount0_out = event.args['amount0Out']
+                    amount1_out = event.args['amount1Out']
+                    Logger.info(f"Swap event: {w3.from_wei(amount0_out, 'ether'):.6f} wINJ ⇄ {w3.from_wei(amount1_out, 'ether'):.6f} PMX")
+                except Exception as e:
+                    Logger.warn(f"Gagal memproses event: {str(e)}")
         return True
     except Exception as e:
-        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Swap gagal: {str(e)}")
+        Logger.error(f"Swap gagal: {str(e)}")
         return False
 
 def get_token_balance(w3, wallet, token_address, token_name):
     token_contract = w3.eth.contract(address=token_address, abi=ERC20_ABI)
     balance = token_contract.functions.balanceOf(wallet.address).call()
-    console.print(f"[{THEME['primary']}]•[/] Balance {token_name}: [bold]{w3.from_wei(balance, 'ether'):.6f}[/bold]")
+    Logger.info(f"Balance {token_name}: {w3.from_wei(balance, 'ether'):.6f}")
     return balance
 
 def main_menu():
@@ -405,7 +419,7 @@ def main():
             token_out = WINJ_ADDRESS
             token_in_name = "PMX"
         else:
-            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Pilihan tidak valid")
+            Logger.error("Pilihan tidak valid")
             return
         
         # Input jumlah token
@@ -414,7 +428,7 @@ def main():
         try:
             amount_in = w3.to_wei(float(amount_str), 'ether')
         except ValueError:
-            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Jumlah tidak valid")
+            Logger.error("Jumlah tidak valid")
             return
         
         # Input jumlah transaksi
@@ -425,7 +439,7 @@ def main():
             if tx_count <= 0:
                 raise ValueError
         except ValueError:
-            console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Jumlah tidak valid")
+            Logger.error("Jumlah tidak valid")
             return
         
         # Ringkasan eksekusi
@@ -441,7 +455,7 @@ def main():
         
         confirm = console.input(f"[{THEME['primary']}]»[/] Lanjutkan? (y/N): ")
         if confirm.lower() != 'y':
-            console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] Eksekusi dibatalkan")
+            Logger.warn("Eksekusi dibatalkan")
             return
         
         # Statistik keseluruhan
@@ -454,7 +468,7 @@ def main():
             try:
                 wallet = w3.eth.account.from_key(pk)
                 if not wallet.address:
-                    console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Wallet tidak valid: {pk[:6]}...")
+                    Logger.error(f"Wallet tidak valid: {pk[:6]}...")
                     continue
                 
                 console.print(Panel(
@@ -469,7 +483,7 @@ def main():
                 total_required = amount_in * tx_count
                 
                 if balance < total_required:
-                    console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Saldo tidak mencukupi! Diperlukan: {w3.from_wei(total_required, 'ether'):.6f} {token_in_name}")
+                    Logger.error(f"Saldo tidak mencukupi! Diperlukan: {w3.from_wei(total_required, 'ether'):.6f} {token_in_name}")
                     continue
                 
                 # Eksekusi swap
@@ -481,10 +495,11 @@ def main():
                     
                     # Jeda antar transaksi
                     if tx_num < tx_count:
+                        Logger.info("Menunggu 3 detik sebelum swap berikutnya...")
                         time.sleep(3)
             
             except Exception as e:
-                console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Error pada wallet: {str(e)}")
+                Logger.error(f"Error pada wallet: {str(e)}")
         
         # Ringkasan akhir
         elapsed_time = time.time() - start_time
@@ -507,10 +522,10 @@ def main():
             )
         )
     except KeyboardInterrupt:
-        console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] Program dihentikan oleh pengguna")
+        Logger.warn("Program dihentikan oleh pengguna")
         exit(0)
     except Exception as e:
-        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] Error fatal: {str(e)}")
+        Logger.error(f"Error fatal: {str(e)}")
         exit(1)
 
 if __name__ == "__main__":
