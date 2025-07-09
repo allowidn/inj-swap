@@ -12,7 +12,6 @@ from rich import box
 from rich.style import Style
 from rich.text import Text
 from rich.columns import Columns
-from rich.markdown import Markdown
 
 # Inisialisasi rich console
 console = Console()
@@ -545,6 +544,7 @@ def main():
             border_style=border_style,
             box=box.ROUNDED,
             padding=(1, 4)
+        )
         console.print(result_panel)
     except KeyboardInterrupt:
         Logger.warn("Program dihentikan oleh pengguna")
