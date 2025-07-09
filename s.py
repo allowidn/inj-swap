@@ -92,8 +92,91 @@ PMX_ADDRESS = '0xeD0094eE59492cB08A5602Eb8275acb00FFb627d'
 PAIR_ADDRESS = '0x54Ba382CED996738c2A0793247F66dE86C441987'
 
 # ABI kontrak (sama seperti sebelumnya)
-# ... [ABI tetap sama] ...
+ROUTER_ABI = [
+    {
+        "name": "swapExactTokensForTokens",
+        "type": "function",
+        "inputs": [
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "amountOutMin", "type": "uint256"},
+            {
+                "name": "routes",
+                "type": "tuple[]",
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "stable", "type": "bool"}
+                ]
+            },
+            {"name": "to", "type": "address"},
+            {"name": "deadline", "type": "uint256"}
+        ],
+        "outputs": [{"name": "amounts", "type": "uint256[]"}]
+    },
+    {
+        "name": "getAmountsOut",
+        "type": "function",
+        "inputs": [
+            {"name": "amountIn", "type": "uint256"},
+            {
+                "name": "routes",
+                "type": "tuple[]",
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "stable", "type": "bool"}
+                ]
+            }
+        ],
+        "outputs": [{"name": "amounts", "type": "uint256[]"}],
+        "stateMutability": "view"
+    }
+]
 
+ERC20_ABI = [
+    {
+        "name": "approve",
+        "type": "function",
+        "inputs": [
+            {"name": "spender", "type": "address"},
+            {"name": "amount", "type": "uint256"}
+        ],
+        "outputs": [{"name": "", "type": "bool"}]
+    },
+    {
+        "name": "allowance",
+        "type": "function",
+        "inputs": [
+            {"name": "owner", "type": "address"},
+            {"name": "spender", "type": "address"}
+        ],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view"
+    },
+    {
+        "name": "balanceOf",
+        "type": "function",
+        "inputs": [{"name": "account", "type": "address"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view"
+    }
+]
+
+PAIR_ABI = [
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "name": "sender", "type": "address"},
+            {"indexed": False, "name": "amount0In", "type": "uint256"},
+            {"indexed": False, "name": "amount1In", "type": "uint256"},
+            {"indexed": False, "name": "amount0Out", "type": "uint256"},
+            {"indexed": False, "name": "amount1Out", "type": "uint256"},
+            {"indexed": True, "name": "to", "type": "address"}
+        ],
+        "name": "Swap",
+        "type": "event"
+    }
+]
 # Inisialisasi Web3
 def init_web3():
     console.print(f"[{THEME['info']}][⟳][/] Menghubungkan ke jaringan Injective...")
