@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import time
-import math
 from datetime import datetime
 from web3 import Web3
 from dotenv import load_dotenv
