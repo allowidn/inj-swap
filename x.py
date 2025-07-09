@@ -15,17 +15,17 @@ from rich.text import Text
 # Inisialisasi rich console
 console = Console()
 
-# Tema warna yang valid dengan format Rich
+# Tema warna yang diperbaiki
 THEME = {
-    "primary": "bold cyan",
-    "secondary": "blue",
-    "success": "bold green",
-    "warning": "bold yellow",
-    "error": "bold red",
-    "info": "cyan",
-    "accent": "magenta",
-    "dark": "black",
-    "light": "white"
+    "primary": Style(color="cyan", bold=True),
+    "secondary": Style(color="blue"),
+    "success": Style(color="green", bold=True),
+    "warning": Style(color="yellow", bold=True),
+    "error": Style(color="red", bold=True),
+    "info": Style(color="cyan"),
+    "accent": Style(color="magenta"),
+    "dark": Style(color="black"),
+    "light": Style(color="white")
 }
 
 # Banner aplikasi
@@ -34,38 +34,38 @@ def show_banner():
         Text("Injective Automation BOT", justify="center", style=THEME["accent"]),
         Text("Allowindo VIP Edition", justify="center", style=THEME["secondary"]),
         box=box.ROUNDED,
-        style=Style(color=THEME["primary"]),
+        style=THEME["primary"],
         width=80,
         padding=(1, 2),
         title="[bold]🚀 CRYPTO SWAP BOT[/bold]",
-        subtitle=f"[{THEME['info']}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        subtitle=Text(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", style=THEME["info"])
     ))
 
-# Logger dengan format warna yang benar
+# Logger dengan format yang benar
 class Logger:
     @staticmethod
     def info(msg):
-        console.print(f"[{THEME['info']}]•[/] {msg}")
+        console.print(Text("• ", style=THEME["info"]) + Text(msg))
     
     @staticmethod
     def warn(msg):
-        console.print(f"[{THEME['warning']}][!][/] [bold {THEME['warning']}]Warning:[/] {msg}")
+        console.print(Text("[!] ", style=THEME["warning"]) + Text("Warning: ", style=Style(bold=True)) + Text(msg))
     
     @staticmethod
     def error(msg):
-        console.print(f"[{THEME['error']}][✗][/] [bold {THEME['error']}]Error:[/] {msg}")
+        console.print(Text("[✗] ", style=THEME["error"]) + Text("Error: ", style=Style(bold=True)) + Text(msg))
     
     @staticmethod
     def success(msg):
-        console.print(f"[{THEME['success']}][✓][/] [bold {THEME['success']}]Success:[/] {msg}")
+        console.print(Text("[✓] ", style=THEME["success"]) + Text("Success: ", style=Style(bold=True)) + Text(msg))
     
     @staticmethod
     def loading(msg):
-        console.print(f"[{THEME['info']}][⟳][/] {msg}")
+        console.print(Text("[⟳] ", style=THEME["info"]) + Text(msg))
     
     @staticmethod
     def step(msg):
-        console.print(f"[{THEME['accent']}][→][/] [bold]{msg}[/bold]")
+        console.print(Text("[→] ", style=THEME["accent"]) + Text(msg, style=Style(bold=True)))
     
     @staticmethod
     def transaction_status(hash, status, tx_num=None):
@@ -79,9 +79,12 @@ class Logger:
             style = THEME["error"]
             icon = "❌"
         
-        tx_text = f" [dim](TX {tx_num})[/dim]" if tx_num else ""
+        tx_text = Text(f" (TX {tx_num})", style=Style(dim=True)) if tx_num else Text("")
         console.print(
-            f"[{style}]{icon} [bold]Transaction:[/bold] [link=https://testnet.blockscout.injective.network/tx/{hash}]{hash[:12]}...[/link]{tx_text}"
+            Text(icon + " ", style=style) + 
+            Text("Transaction: ", style=Style(bold=True)) +
+            Text(f"{hash[:12]}...", style=Style(link=f"https://testnet.blockscout.injective.network/tx/{hash}")) +
+            tx_text
         )
 
 # Konfigurasi jaringan
@@ -201,7 +204,7 @@ def load_private_keys():
     return private_keys
 
 def create_wallet_table(w3, wallets):
-    table = Table(show_header=True, header_style=f"bold {THEME['primary']}", box=box.ROUNDED)
+    table = Table(show_header=True, header_style=THEME["primary"], box=box.ROUNDED)
     table.add_column("#", style="dim", width=4)
     table.add_column("Address", min_width=20)
     table.add_column("Balance", justify="right")
@@ -243,7 +246,7 @@ def approve_token(w3, wallet, token_address, spender, amount):
             TimeRemainingColumn(),
             transient=True
         ) as progress:
-            task = progress.add_task(f"[{THEME['info']}]Menunggu konfirmasi...", total=1)
+            task = progress.add_task(f"[cyan]Menunggu konfirmasi...", total=1)
             receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
             progress.update(task, advance=1)
         
@@ -329,7 +332,7 @@ def swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num):
             TimeRemainingColumn(),
             transient=True
         ) as progress:
-            task = progress.add_task(f"[{THEME['info']}]Mengkonfirmasi transaksi...", total=1)
+            task = progress.add_task(f"[cyan]Mengkonfirmasi transaksi...", total=1)
             receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
             progress.update(task, advance=1)
         
@@ -366,7 +369,7 @@ def main_menu():
     console.print(Panel(
         "PILIH ARAH SWAP",
         box=box.ROUNDED,
-        style=Style(color=THEME["secondary"]),
+        style=THEME["secondary"],
         width=40
     ))
     
@@ -381,13 +384,13 @@ def main_menu():
     
     for num, text in options:
         grid.add_row(
-            f"[{THEME['accent']}][bold]{num}[/bold][/]",
+            Text(f"{num}", style=THEME["accent"] + Style(bold=True)),
             text
         )
     
     console.print(grid, justify="center")
     
-    choice = console.input(f"[{THEME['primary']}]»[/] Masukkan pilihan [1-2]: ")
+    choice = console.input(Text("» ", style=THEME["primary"]) + "Masukkan pilihan [1-2]: ")
     return choice
 
 def main():
@@ -404,7 +407,7 @@ def main():
         console.print(Panel(
             create_wallet_table(w3, private_keys),
             title="[bold]WALLET TERDETEKSI[/bold]",
-            border_style=Style(color=THEME["primary"])
+            border_style=THEME["primary"]
         ))
         
         # Pilih arah swap
@@ -424,7 +427,7 @@ def main():
         
         # Input jumlah token
         amount_str = console.input(
-            f"[{THEME['primary']}]»[/] Masukkan jumlah {token_in_name} per swap: ")
+            Text("» ", style=THEME["primary"]) + f"Masukkan jumlah {token_in_name} per swap: ")
         try:
             amount_in = w3.to_wei(float(amount_str), 'ether')
         except ValueError:
@@ -433,7 +436,7 @@ def main():
         
         # Input jumlah transaksi
         tx_count_str = console.input(
-            f"[{THEME['primary']}]»[/] Jumlah swap per wallet: ")
+            Text("» ", style=THEME["primary"]) + "Jumlah swap per wallet: ")
         try:
             tx_count = int(tx_count_str)
             if tx_count <= 0:
@@ -444,16 +447,18 @@ def main():
         
         # Ringkasan eksekusi
         console.print(Panel(
-            f"[bold]RINCIAN EKSEKUSI[/bold]\n\n"
-            f"• Arah swap: [bold]{token_in_name} → {'PMX' if token_out == PMX_ADDRESS else 'wINJ'}[/bold]\n"
-            f"• Jumlah per swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f} {token_in_name}[/bold]\n"
-            f"• Swap per wallet: [bold]{tx_count}[/bold]\n"
-            f"• Total wallet: [bold]{len(private_keys)}[/bold]",
+            Text.from_markup(
+                f"[bold]RINCIAN EKSEKUSI[/bold]\n\n"
+                f"• Arah swap: [bold]{token_in_name} → {'PMX' if token_out == PMX_ADDRESS else 'wINJ'}[/bold]\n"
+                f"• Jumlah per swap: [bold]{w3.from_wei(amount_in, 'ether'):.6f} {token_in_name}[/bold]\n"
+                f"• Swap per wallet: [bold]{tx_count}[/bold]\n"
+                f"• Total wallet: [bold]{len(private_keys)}[/bold]"
+            ),
             title="[bold]KONFIRMASI[/bold]",
-            border_style=Style(color=THEME["accent"])
+            border_style=THEME["accent"]
         ))
         
-        confirm = console.input(f"[{THEME['primary']}]»[/] Lanjutkan? (y/N): ")
+        confirm = console.input(Text("» ", style=THEME["primary"]) + "Lanjutkan? (y/N): ")
         if confirm.lower() != 'y':
             Logger.warn("Eksekusi dibatalkan")
             return
@@ -472,10 +477,12 @@ def main():
                     continue
                 
                 console.print(Panel(
-                    f"[bold]{wallet.address}[/bold]\n"
-                    f"Wallet [bold]{idx}[/bold] dari [bold]{len(private_keys)}[/bold]",
+                    Text.from_markup(
+                        f"[bold]{wallet.address}[/bold]\n"
+                        f"Wallet [bold]{idx}[/bold] dari [bold]{len(private_keys)}[/bold]"
+                    ),
                     title=f"🚀 PROSES WALLET {idx}",
-                    border_style=Style(color=THEME["info"])
+                    border_style=THEME["info"]
                 ))
                 
                 # Cek balance
@@ -488,7 +495,7 @@ def main():
                 
                 # Eksekusi swap
                 for tx_num in range(1, tx_count + 1):
-                    console.rule(f"Swap [bold]{tx_num}[/bold] dari [bold]{tx_count}[/bold]", style=Style(color=THEME["secondary"]))
+                    console.rule(f"Swap [bold]{tx_num}[/bold] dari [bold]{tx_count}[/bold]", style=THEME["secondary"])
                     success = swap_tokens(w3, wallet, amount_in, token_in, token_out, tx_num)
                     if success:
                         successful_swaps += 1
@@ -503,7 +510,7 @@ def main():
         
         # Ringkasan akhir
         elapsed_time = time.time() - start_time
-        panel_content = (
+        panel_content = Text.from_markup(
             f"[bold]• TOTAL SWAP:[/bold] {total_swaps}\n"
             f"[bold]• BERHASIL:[/bold] {successful_swaps}\n"
             f"[bold]• GAGAL:[/bold] {total_swaps - successful_swaps}\n"
@@ -517,7 +524,7 @@ def main():
             Panel(
                 panel_content,
                 title="[bold]📊 HASIL AKHIR[/bold]",
-                border_style=Style(color=border_style),
+                border_style=border_style,
                 padding=(1, 4)
             )
         )
